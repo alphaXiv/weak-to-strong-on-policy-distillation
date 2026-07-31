@@ -14,7 +14,7 @@
   "train_steps": 6,
   "learning_rate": 2e-6,
   "alpha": 1.0,
-  "teacher_top_k": 32,
+  "teacher_top_k": 64,
   "lora_rank": 16,
   "lora_alpha": 32
 }
