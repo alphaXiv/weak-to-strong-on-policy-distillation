@@ -16,8 +16,8 @@ metadata:
   name: w2s-repro-{{ORX_RUN}}
 spec:
   completionMode: Indexed
-  completions: 2
-  parallelism: 2
+  completions: 1
+  parallelism: 1
   template:
     spec:
       restartPolicy: Never
@@ -32,7 +32,7 @@ spec:
                 fieldRef:
                   fieldPath: metadata.annotations['batch.kubernetes.io/job-completion-index']
             - name: ORX_NUM_PODS
-              value: "2"
+              value: "1"
           resources:
             requests:
               nvidia.com/gpu: "8"
