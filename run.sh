@@ -11,5 +11,17 @@ echo "RUN_CONFIG_BEGIN"
 cat config.json
 echo "RUN_CONFIG_END"
 nvidia-smi --query-gpu=index,name,memory.total --format=csv,noheader
-torchrun --standalone --nproc_per_node=8 experiment.py
+pids=()
+for local_rank in $(seq 0 7); do
+  CUDA_VISIBLE_DEVICES="$local_rank" LOCAL_RANK="$local_rank" LOCAL_WORLD_SIZE=8 \
+    python -u experiment.py &
+  pids+=("$!")
+done
 
+status=0
+for pid in "${pids[@]}"; do
+  if ! wait "$pid"; then
+    status=1
+  fi
+done
+exit "$status"

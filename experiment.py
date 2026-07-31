@@ -11,10 +11,8 @@ import time
 from pathlib import Path
 
 import torch
-import torch.distributed as dist
 from datasets import load_dataset
 from huggingface_hub import snapshot_download
-from torch.nn.parallel import DistributedDataParallel as DDP
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 
@@ -25,35 +23,53 @@ LOCAL_WORLD_SIZE = int(os.environ["LOCAL_WORLD_SIZE"])
 POD_INDEX = int(os.environ.get("JOB_COMPLETION_INDEX", "0"))
 GLOBAL_SHARD_RANK = POD_INDEX * LOCAL_WORLD_SIZE + LOCAL_RANK
 GLOBAL_SHARDS = int(os.environ.get("ORX_NUM_PODS", "2")) * LOCAL_WORLD_SIZE
-DEVICE = torch.device("cuda", LOCAL_RANK)
+DEVICE = torch.device("cuda", 0)
 CACHE = os.environ.get("HF_HOME", "/cache/hf")
 
 
 def setup() -> None:
     torch.cuda.set_device(DEVICE)
-    dist.init_process_group("nccl", device_id=DEVICE)
     seed = int(CFG["seed"]) + GLOBAL_SHARD_RANK
     random.seed(seed)
     torch.manual_seed(seed)
     torch.cuda.manual_seed(seed)
 
 
-def barrier() -> None:
-    dist.barrier(device_ids=[LOCAL_RANK])
+def wait_for(paths: list[Path], timeout: int = 7200) -> None:
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if all(path.exists() for path in paths):
+            return
+        time.sleep(2)
+    missing = [str(path) for path in paths if not path.exists()]
+    raise TimeoutError(f"Timed out waiting for files: {missing}")
 
 
 def download(repo_id: str) -> None:
+    ready = Path("/cache") / ("ready-" + repo_id.replace("/", "--"))
     if LOCAL_RANK == 0:
         print(f"DOWNLOAD_START model={repo_id}", flush=True)
         snapshot_download(repo_id=repo_id, cache_dir=CACHE, token=os.environ.get("HF_TOKEN"))
+        ready.touch()
         print(f"DOWNLOAD_DONE model={repo_id}", flush=True)
-    barrier()
+    else:
+        wait_for([ready])
 
 
 def load_tokenizer():
     return AutoTokenizer.from_pretrained(
         CFG["student_model"], cache_dir=CACHE, token=os.environ.get("HF_TOKEN")
     )
+
+
+def load_data():
+    ready = Path("/cache/dataset-ready")
+    if LOCAL_RANK == 0:
+        data = load_dataset(CFG["dataset"], CFG["dataset_config"], cache_dir=CACHE)
+        ready.touch()
+        return data
+    wait_for([ready])
+    return load_dataset(CFG["dataset"], CFG["dataset_config"], cache_dir=CACHE)
 
 
 def load_model(repo_id: str, trainable: bool = False):
@@ -89,11 +105,10 @@ def prompt_ids(tokenizer, question: str) -> torch.Tensor:
 def generate(model, tokenizer, question: str, seed: int) -> tuple[torch.Tensor, int, str]:
     ids = prompt_ids(tokenizer, question)
     generator = torch.Generator(device=DEVICE).manual_seed(seed)
-    base = model.module if isinstance(model, DDP) else model
-    old_cache = base.config.use_cache
-    base.config.use_cache = True
+    old_cache = model.config.use_cache
+    model.config.use_cache = True
     with torch.inference_mode():
-        full = base.generate(
+        full = model.generate(
             ids,
             do_sample=True,
             temperature=float(CFG["temperature"]),
@@ -102,7 +117,7 @@ def generate(model, tokenizer, question: str, seed: int) -> tuple[torch.Tensor, 
             pad_token_id=tokenizer.eos_token_id,
             generator=generator,
         )
-    base.config.use_cache = old_cache
+    model.config.use_cache = old_cache
     text = tokenizer.decode(full[0, ids.shape[1] :], skip_special_tokens=True)
     return full, ids.shape[1], text
 
@@ -157,12 +172,10 @@ def evaluate(model, tokenizer, test_rows, shard_rank: int, shard_count: int) -> 
     return records
 
 
-def gather_local(records: list[dict]) -> list[dict] | None:
-    gathered = [None for _ in range(LOCAL_WORLD_SIZE)] if LOCAL_RANK == 0 else None
-    dist.gather_object(records, gathered, dst=0)
-    if LOCAL_RANK != 0:
-        return None
-    return [item for rank_records in gathered for item in rank_records]
+def write_records(records: list[dict], prefix: str) -> Path:
+    path = Path("/shared") / f"{prefix}-pod-{POD_INDEX}-rank-{LOCAL_RANK}.json"
+    path.write_text(json.dumps(records))
+    return path
 
 
 def metric_block(records: list[dict], mode: str, method: str) -> dict:
@@ -185,24 +198,18 @@ def run_baseline(tokenizer, test_rows) -> None:
     download(CFG["student_model"])
     model = load_model(CFG["student_model"])
     records = evaluate(model, tokenizer, test_rows, GLOBAL_SHARD_RANK, GLOBAL_SHARDS)
-    local_records = gather_local(records)
-    if LOCAL_RANK == 0:
-        shared = Path("/shared")
-        shared.mkdir(parents=True, exist_ok=True)
-        out = shared / f"baseline-pod-{POD_INDEX}.json"
-        out.write_text(json.dumps(local_records))
-        print(f"POD_RESULT_WRITTEN path={out} records={len(local_records)}", flush=True)
-        if POD_INDEX == 0:
-            other = shared / "baseline-pod-1.json"
-            deadline = time.time() + 7200
-            while not other.exists() and time.time() < deadline:
-                time.sleep(5)
-            if not other.exists():
-                raise TimeoutError("Timed out waiting for second baseline shard")
-            all_records = local_records + json.loads(other.read_text())
-            metrics = metric_block(all_records, "baseline", "none")
-            print("ORX_METRICS " + json.dumps(metrics, sort_keys=True), flush=True)
-    barrier()
+    out = write_records(records, "baseline")
+    print(f"SHARD_RESULT_WRITTEN path={out} records={len(records)}", flush=True)
+    if POD_INDEX == 0 and LOCAL_RANK == 0:
+        expected = [
+            Path("/shared") / f"baseline-pod-{pod}-rank-{rank}.json"
+            for pod in range(int(os.environ.get("ORX_NUM_PODS", "2")))
+            for rank in range(LOCAL_WORLD_SIZE)
+        ]
+        wait_for(expected)
+        all_records = [item for path in expected for item in json.loads(path.read_text())]
+        metrics = metric_block(all_records, "baseline", "none")
+        print("ORX_METRICS " + json.dumps(metrics, sort_keys=True), flush=True)
 
 
 def response_logits(model, full_ids: torch.Tensor, prompt_len: int) -> torch.Tensor:
@@ -213,7 +220,7 @@ def response_logits(model, full_ids: torch.Tensor, prompt_len: int) -> torch.Ten
 
 
 def train_distillation(tokenizer, train_rows, test_rows) -> None:
-    from peft import LoraConfig, get_peft_model
+    from peft import LoraConfig, get_peft_model, get_peft_model_state_dict, set_peft_model_state_dict
 
     method = CFG["method"]
     required = [CFG["student_model"], CFG["positive_model"]]
@@ -234,7 +241,6 @@ def train_distillation(tokenizer, train_rows, test_rows) -> None:
     student = get_peft_model(student, lora)
     student.enable_input_require_grads()
     student.gradient_checkpointing_enable(gradient_checkpointing_kwargs={"use_reentrant": False})
-    student = DDP(student, device_ids=[LOCAL_RANK], find_unused_parameters=False)
 
     positive = load_model(CFG["positive_model"])
     positive.eval()
@@ -302,28 +308,68 @@ def train_distillation(tokenizer, train_rows, test_rows) -> None:
         grad_norm = torch.nn.utils.clip_grad_norm_(student.parameters(), 1.0)
         optimizer.step()
         losses.append(float(loss.detach()))
-        tokens_seen += response_tokens * LOCAL_WORLD_SIZE
+        tokens_seen += response_tokens
         if LOCAL_RANK == 0:
             print(
                 f"TRAIN_STEP step={step + 1}/{CFG['train_steps']} loss={loss.item():.6f} "
                 f"grad_norm={float(grad_norm):.6f} response_tokens_rank0={response_tokens} "
-                f"global_tokens_seen={tokens_seen}",
+                f"rank0_tokens_seen={tokens_seen}",
                 flush=True,
             )
         del output, student_logits, student_top, student_log_probs, student_probs, loss
 
-    records = evaluate(student, tokenizer, test_rows, LOCAL_RANK, LOCAL_WORLD_SIZE)
-    all_records = gather_local(records)
+    adapter_dir = Path("/shared/adapters")
+    adapter_dir.mkdir(parents=True, exist_ok=True)
+    adapter_path = adapter_dir / f"{method}-rank-{LOCAL_RANK}.pt"
+    torch.save(
+        {key: value.detach().cpu() for key, value in get_peft_model_state_dict(student).items()},
+        adapter_path,
+    )
+    stats_path = adapter_dir / f"{method}-stats-{LOCAL_RANK}.json"
+    stats_path.write_text(
+        json.dumps({"mean_loss": sum(losses) / len(losses), "final_loss": losses[-1]})
+    )
+    adapter_paths = [adapter_dir / f"{method}-rank-{rank}.pt" for rank in range(LOCAL_WORLD_SIZE)]
+    stats_paths = [
+        adapter_dir / f"{method}-stats-{rank}.json" for rank in range(LOCAL_WORLD_SIZE)
+    ]
+    wait_for(adapter_paths + stats_paths)
+    averaged_path = adapter_dir / f"{method}-averaged.pt"
     if LOCAL_RANK == 0:
+        states = [torch.load(path, map_location="cpu", weights_only=True) for path in adapter_paths]
+        averaged = {}
+        for key in states[0]:
+            averaged[key] = torch.stack([state[key].float() for state in states]).mean(0).to(
+                states[0][key].dtype
+            )
+        torch.save(averaged, averaged_path)
+        print(f"ADAPTER_AVERAGED workers={LOCAL_WORLD_SIZE} path={averaged_path}", flush=True)
+    wait_for([averaged_path])
+    averaged = torch.load(averaged_path, map_location="cpu", weights_only=True)
+    set_peft_model_state_dict(student, averaged)
+
+    records = evaluate(student, tokenizer, test_rows, LOCAL_RANK, LOCAL_WORLD_SIZE)
+    out = write_records(records, method)
+    print(f"SHARD_RESULT_WRITTEN path={out} records={len(records)}", flush=True)
+    if LOCAL_RANK == 0:
+        expected = [
+            Path("/shared") / f"{method}-pod-{POD_INDEX}-rank-{rank}.json"
+            for rank in range(LOCAL_WORLD_SIZE)
+        ]
+        wait_for(expected)
+        all_records = [item for path in expected for item in json.loads(path.read_text())]
+        stats = [json.loads(path.read_text()) for path in stats_paths]
         metrics = metric_block(all_records, "distillation", method)
         metrics.update(
             {
                 "alpha": CFG["alpha"] if method == "w2s" else None,
                 "teacher_top_k": CFG["teacher_top_k"],
                 "train_steps": CFG["train_steps"],
-                "global_batch_size": LOCAL_WORLD_SIZE,
-                "mean_rank0_loss": sum(losses) / len(losses),
-                "final_rank0_loss": losses[-1],
+                "parallel_workers": LOCAL_WORLD_SIZE,
+                "effective_rollouts": int(CFG["train_steps"]) * LOCAL_WORLD_SIZE,
+                "adapter_aggregation": "mean_of_independent_worker_deltas",
+                "mean_worker_loss": sum(row["mean_loss"] for row in stats) / len(stats),
+                "mean_final_worker_loss": sum(row["final_loss"] for row in stats) / len(stats),
             }
         )
         print("ORX_METRICS " + json.dumps(metrics, sort_keys=True), flush=True)
@@ -341,13 +387,12 @@ def main() -> None:
     tokenizer = load_tokenizer()
     if tokenizer.pad_token_id is None:
         tokenizer.pad_token_id = tokenizer.eos_token_id
-    data = load_dataset(CFG["dataset"], CFG["dataset_config"], cache_dir=CACHE)
+    data = load_data()
     test_rows = data["test"]
     if CFG["mode"] == "baseline":
         run_baseline(tokenizer, test_rows)
     else:
         train_distillation(tokenizer, data["train"], test_rows)
-    dist.destroy_process_group()
 
 
 if __name__ == "__main__":
