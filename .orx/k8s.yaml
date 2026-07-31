@@ -1,0 +1,60 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: w2s-shared-{{ORX_RUN}}
+spec:
+  accessModes:
+    - ReadWriteMany
+  storageClassName: shared-vast
+  resources:
+    requests:
+      storage: 10Gi
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: w2s-repro-{{ORX_RUN}}
+spec:
+  completionMode: Indexed
+  completions: 2
+  parallelism: 2
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: run
+          image: pytorch/pytorch:2.7.1-cuda12.8-cudnn9-runtime
+          imagePullPolicy: IfNotPresent
+          command: ["bash", "-c", "$ORX_SCRIPT"]
+          env:
+            - name: JOB_COMPLETION_INDEX
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.annotations['batch.kubernetes.io/job-completion-index']
+            - name: ORX_NUM_PODS
+              value: "2"
+          resources:
+            requests:
+              nvidia.com/gpu: "8"
+              cpu: "96"
+              memory: 640Gi
+            limits:
+              nvidia.com/gpu: "8"
+          volumeMounts:
+            - name: shared
+              mountPath: /shared
+            - name: cache
+              mountPath: /cache
+            - name: dshm
+              mountPath: /dev/shm
+      volumes:
+        - name: shared
+          persistentVolumeClaim:
+            claimName: w2s-shared-{{ORX_RUN}}
+        - name: cache
+          emptyDir:
+            sizeLimit: 350Gi
+        - name: dshm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 64Gi
