@@ -2,6 +2,5 @@ transformers==4.54.1
 datasets==3.6.0
 accelerate==1.9.0
 peft==0.16.0
-huggingface_hub==0.33.4
+huggingface_hub==0.34.3
 sentencepiece==0.2.0
-
