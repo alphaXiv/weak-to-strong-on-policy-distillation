@@ -10,7 +10,7 @@
   "max_new_tokens": 384,
   "temperature": 1.0,
   "top_p": 1.0,
-  "seed": 20260728,
+  "seed": 20260730,
   "train_steps": 12,
   "learning_rate": 2e-6,
   "alpha": 1.0,
@@ -18,4 +18,3 @@
   "lora_rank": 16,
   "lora_alpha": 32
 }
-
