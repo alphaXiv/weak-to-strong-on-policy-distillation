@@ -6,6 +6,15 @@ export HF_HUB_ENABLE_HF_TRANSFER=0
 export TOKENIZERS_PARALLELISM=false
 export PYTHONUNBUFFERED=1
 
+(
+  while true; do
+    date -u '+LOG_HEARTBEAT %Y-%m-%dT%H:%M:%SZ'
+    sleep 20
+  done
+) &
+heartbeat_pid=$!
+trap 'kill "$heartbeat_pid" 2>/dev/null || true' EXIT
+
 python -m pip install --no-cache-dir -r requirements.txt
 echo "RUN_CONFIG_BEGIN"
 cat config.json
