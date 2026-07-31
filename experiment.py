@@ -263,60 +263,81 @@ def train_distillation(tokenizer, train_rows, test_rows) -> None:
 
     losses = []
     tokens_seen = 0
+    rollouts_per_step = int(CFG.get("rollouts_per_step", 1))
     for step in range(int(CFG["train_steps"])):
-        row_idx = (step * LOCAL_WORLD_SIZE + LOCAL_RANK) % len(train_rows)
-        student.eval()
-        full_ids, prompt_len, _ = generate(
-            student,
-            tokenizer,
-            train_rows[row_idx]["question"],
-            int(CFG["seed"]) + 100000 + step * LOCAL_WORLD_SIZE + LOCAL_RANK,
-        )
-        response_tokens = full_ids.shape[1] - prompt_len
-        if response_tokens == 0:
-            raise RuntimeError("Student generated an empty response")
-
-        with torch.no_grad():
-            if method == "w2s":
-                proxy = response_logits(anchor, full_ids, prompt_len)
-                pos = response_logits(positive, full_ids, prompt_len)
-                proxy.add_(pos, alpha=float(CFG["alpha"]))
-                del pos
-                neg = response_logits(negative, full_ids, prompt_len)
-                proxy.add_(neg, alpha=-float(CFG["alpha"]))
-                del neg
-                teacher_logits = proxy
-            elif method == "opd":
-                teacher_logits = response_logits(positive, full_ids, prompt_len)
-            else:
-                raise ValueError(f"Unknown training method: {method}")
-            top_values, top_indices = torch.topk(
-                teacher_logits, k=int(CFG["teacher_top_k"]), dim=-1
-            )
-            teacher_log_probs = torch.log_softmax(top_values.float(), dim=-1)
-            del teacher_logits, top_values
-
-        student.train()
         optimizer.zero_grad(set_to_none=True)
-        output = student(input_ids=full_ids, attention_mask=torch.ones_like(full_ids), use_cache=False)
-        student_logits = output.logits[:, prompt_len - 1 : full_ids.shape[1] - 1]
-        student_top = torch.gather(student_logits, -1, top_indices)
-        student_log_probs = torch.log_softmax(student_top.float(), dim=-1)
-        student_probs = student_log_probs.exp()
-        loss = (student_probs * (student_log_probs - teacher_log_probs)).sum(dim=-1).mean()
-        loss.backward()
+        rollout_losses = []
+        step_tokens = 0
+        for rollout in range(rollouts_per_step):
+            sample_index = (step * rollouts_per_step + rollout) * LOCAL_WORLD_SIZE + LOCAL_RANK
+            row_idx = sample_index % len(train_rows)
+            student.eval()
+            full_ids, prompt_len, _ = generate(
+                student,
+                tokenizer,
+                train_rows[row_idx]["question"],
+                int(CFG["seed"]) + 100000 + sample_index,
+            )
+            response_tokens = full_ids.shape[1] - prompt_len
+            if response_tokens == 0:
+                raise RuntimeError("Student generated an empty response")
+
+            with torch.no_grad():
+                if method == "w2s":
+                    proxy = response_logits(anchor, full_ids, prompt_len)
+                    pos = response_logits(positive, full_ids, prompt_len)
+                    proxy.add_(pos, alpha=float(CFG["alpha"]))
+                    del pos
+                    neg = response_logits(negative, full_ids, prompt_len)
+                    proxy.add_(neg, alpha=-float(CFG["alpha"]))
+                    del neg
+                    teacher_logits = proxy
+                elif method == "opd":
+                    teacher_logits = response_logits(positive, full_ids, prompt_len)
+                else:
+                    raise ValueError(f"Unknown training method: {method}")
+                top_values, top_indices = torch.topk(
+                    teacher_logits, k=int(CFG["teacher_top_k"]), dim=-1
+                )
+                teacher_log_probs = torch.log_softmax(top_values.float(), dim=-1)
+                del teacher_logits, top_values
+
+            student.train()
+            output = student(
+                input_ids=full_ids, attention_mask=torch.ones_like(full_ids), use_cache=False
+            )
+            student_logits = output.logits[:, prompt_len - 1 : full_ids.shape[1] - 1]
+            student_top = torch.gather(student_logits, -1, top_indices)
+            student_log_probs = torch.log_softmax(student_top.float(), dim=-1)
+            student_probs = student_log_probs.exp()
+            loss = (student_probs * (student_log_probs - teacher_log_probs)).sum(dim=-1).mean()
+            (loss / rollouts_per_step).backward()
+            rollout_losses.append(float(loss.detach()))
+            step_tokens += response_tokens
+            del (
+                full_ids,
+                output,
+                student_logits,
+                student_top,
+                student_log_probs,
+                student_probs,
+                teacher_log_probs,
+                top_indices,
+                loss,
+            )
+
         grad_norm = torch.nn.utils.clip_grad_norm_(student.parameters(), 1.0)
         optimizer.step()
-        losses.append(float(loss.detach()))
-        tokens_seen += response_tokens
+        step_loss = sum(rollout_losses) / len(rollout_losses)
+        losses.append(step_loss)
+        tokens_seen += step_tokens
         if LOCAL_RANK == 0:
             print(
-                f"TRAIN_STEP step={step + 1}/{CFG['train_steps']} loss={loss.item():.6f} "
-                f"grad_norm={float(grad_norm):.6f} response_tokens_rank0={response_tokens} "
-                f"rank0_tokens_seen={tokens_seen}",
+                f"TRAIN_STEP step={step + 1}/{CFG['train_steps']} loss={step_loss:.6f} "
+                f"grad_norm={float(grad_norm):.6f} rollouts_rank0={rollouts_per_step} "
+                f"response_tokens_rank0={step_tokens} rank0_tokens_seen={tokens_seen}",
                 flush=True,
             )
-        del output, student_logits, student_top, student_log_probs, student_probs, loss
 
     adapter_dir = Path("/shared/adapters")
     adapter_dir.mkdir(parents=True, exist_ok=True)
@@ -365,8 +386,11 @@ def train_distillation(tokenizer, train_rows, test_rows) -> None:
                 "alpha": CFG["alpha"] if method == "w2s" else None,
                 "teacher_top_k": CFG["teacher_top_k"],
                 "train_steps": CFG["train_steps"],
+                "rollouts_per_step": rollouts_per_step,
                 "parallel_workers": LOCAL_WORLD_SIZE,
-                "effective_rollouts": int(CFG["train_steps"]) * LOCAL_WORLD_SIZE,
+                "effective_rollouts": (
+                    int(CFG["train_steps"]) * LOCAL_WORLD_SIZE * rollouts_per_step
+                ),
                 "adapter_aggregation": "mean_of_independent_worker_deltas",
                 "mean_worker_loss": sum(row["mean_loss"] for row in stats) / len(stats),
                 "mean_final_worker_loss": sum(row["final_loss"] for row in stats) / len(stats),
