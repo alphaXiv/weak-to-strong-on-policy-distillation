@@ -11,7 +11,7 @@
   "temperature": 1.0,
   "top_p": 1.0,
   "seed": 20260728,
-  "train_steps": 25,
+  "train_steps": 18,
   "rollouts_per_step": 8,
   "learning_rate": 2e-6,
   "alpha": 1.0,
