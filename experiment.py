@@ -31,11 +31,15 @@ CACHE = os.environ.get("HF_HOME", "/cache/hf")
 
 def setup() -> None:
     torch.cuda.set_device(DEVICE)
-    dist.init_process_group("nccl")
+    dist.init_process_group("nccl", device_id=DEVICE)
     seed = int(CFG["seed"]) + GLOBAL_SHARD_RANK
     random.seed(seed)
     torch.manual_seed(seed)
     torch.cuda.manual_seed(seed)
+
+
+def barrier() -> None:
+    dist.barrier(device_ids=[LOCAL_RANK])
 
 
 def download(repo_id: str) -> None:
@@ -43,7 +47,7 @@ def download(repo_id: str) -> None:
         print(f"DOWNLOAD_START model={repo_id}", flush=True)
         snapshot_download(repo_id=repo_id, cache_dir=CACHE, token=os.environ.get("HF_TOKEN"))
         print(f"DOWNLOAD_DONE model={repo_id}", flush=True)
-    dist.barrier()
+    barrier()
 
 
 def load_tokenizer():
@@ -198,7 +202,7 @@ def run_baseline(tokenizer, test_rows) -> None:
             all_records = local_records + json.loads(other.read_text())
             metrics = metric_block(all_records, "baseline", "none")
             print("ORX_METRICS " + json.dumps(metrics, sort_keys=True), flush=True)
-    dist.barrier()
+    barrier()
 
 
 def response_logits(model, full_ids: torch.Tensor, prompt_len: int) -> torch.Tensor:
@@ -348,4 +352,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
