@@ -276,7 +276,7 @@ def train_distillation(tokenizer, train_rows, test_rows) -> None:
         if response_tokens == 0:
             raise RuntimeError("Student generated an empty response")
 
-        with torch.inference_mode():
+        with torch.no_grad():
             if method == "w2s":
                 proxy = response_logits(anchor, full_ids, prompt_len)
                 pos = response_logits(positive, full_ids, prompt_len)
