@@ -104,7 +104,8 @@ def prompt_ids(tokenizer, question: str) -> torch.Tensor:
 
 def generate(model, tokenizer, question: str, seed: int) -> tuple[torch.Tensor, int, str]:
     ids = prompt_ids(tokenizer, question)
-    generator = torch.Generator(device=DEVICE).manual_seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
     old_cache = model.config.use_cache
     model.config.use_cache = True
     with torch.inference_mode():
@@ -115,7 +116,6 @@ def generate(model, tokenizer, question: str, seed: int) -> tuple[torch.Tensor, 
             top_p=float(CFG["top_p"]),
             max_new_tokens=int(CFG["max_new_tokens"]),
             pad_token_id=tokenizer.eos_token_id,
-            generator=generator,
         )
     model.config.use_cache = old_cache
     text = tokenizer.decode(full[0, ids.shape[1] :], skip_special_tokens=True)
