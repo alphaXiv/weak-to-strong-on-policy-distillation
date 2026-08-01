@@ -3,7 +3,7 @@
 **Project:** Weak-to-Strong On-Policy Distillation  
 **Source:** Fangxu Yu et al., [arXiv:2607.26246](https://arxiv.org/abs/2607.26246)  
 **Reproduction date:** 2026-07-31  
-**Status:** completed partial reproduction with successful Kubernetes terminal logs
+**Status:** completed partial reproduction with successful Kubernetes terminal logs; one explicitly excluded full-evaluation failure
 
 ## Executive summary
 
@@ -113,6 +113,12 @@ At this smoke scale, direct OPD has the larger mean paired gain and W2S changes 
 
 These screens were used only to choose plausible settings. Their small evaluation set makes one- or two-example differences weak evidence.
 
+### Excluded full-test attempt
+
+A final direct-OPD child attempted to retain the 25×64/LR-2e-6 recipe while expanding evaluation from 512 examples to all 1,319 GSM8K test examples. Training completed, but the evaluation did **not** produce `ORX_METRICS`. Three workers observed the averaged-checkpoint path before rank 0 had finished writing it and failed with `EOFError` or `PytorchStreamReader failed reading zip archive`. Five surviving modulo shards produced 681/824 correct (82.65%), but that subset omits every example assigned to ranks 2, 4, and 6 and is not a valid full-test estimate. It is excluded from all result comparisons.
+
+The stuck run was cancelled rather than relaunched under the operator's stop request. The public package fixes the coordination race by writing worker states, statistics, and the averaged adapter to process-unique temporary files and atomically renaming them into place. This postmortem fix was syntax-checked but received no new training run.
+
 ## Comparison with the source paper
 
 Yu et al. report that the 4B–0.6B scale direction yields average absolute gains for the 8B student across math and code tasks. This study preserves the defining proxy-logit equation, on-policy sampling, reverse-KL direction, and top-K teacher approximation. It diverges in several consequential ways:
@@ -138,6 +144,7 @@ The largest fidelity gap is worker aggregation. Averaging independently optimize
 6. **Limited benchmark scope.** GSM8K alone cannot test the paper's cross-domain or out-of-domain claims.
 7. **Model revision drift.** Hugging Face repository names are pinned, but immutable model revision hashes were not recorded.
 8. **Parser sensitivity.** Exact numeric extraction may disagree with a benchmark's canonical evaluator for unusual response formats.
+9. **Postmortem code delta.** The publication branch contains the atomic-write repair described above; measured commits are preserved separately in `results.csv`.
 
 ## Conclusion
 

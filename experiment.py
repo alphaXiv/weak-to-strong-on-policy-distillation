@@ -45,6 +45,20 @@ def wait_for(paths: list[Path], timeout: int = 7200) -> None:
     raise TimeoutError(f"Timed out waiting for files: {missing}")
 
 
+def atomic_torch_save(payload, path: Path) -> None:
+    """Publish a torch checkpoint only after all bytes have been written."""
+    temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    torch.save(payload, temporary)
+    os.replace(temporary, path)
+
+
+def atomic_write_text(path: Path, text: str) -> None:
+    """Publish small coordination files atomically on the shared volume."""
+    temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    temporary.write_text(text)
+    os.replace(temporary, path)
+
+
 def download(repo_id: str) -> None:
     ready = Path("/cache") / ("ready-" + repo_id.replace("/", "--"))
     if LOCAL_RANK == 0:
@@ -342,13 +356,14 @@ def train_distillation(tokenizer, train_rows, test_rows) -> None:
     adapter_dir = Path("/shared/adapters")
     adapter_dir.mkdir(parents=True, exist_ok=True)
     adapter_path = adapter_dir / f"{method}-rank-{LOCAL_RANK}.pt"
-    torch.save(
+    atomic_torch_save(
         {key: value.detach().cpu() for key, value in get_peft_model_state_dict(student).items()},
         adapter_path,
     )
     stats_path = adapter_dir / f"{method}-stats-{LOCAL_RANK}.json"
-    stats_path.write_text(
-        json.dumps({"mean_loss": sum(losses) / len(losses), "final_loss": losses[-1]})
+    atomic_write_text(
+        stats_path,
+        json.dumps({"mean_loss": sum(losses) / len(losses), "final_loss": losses[-1]}),
     )
     adapter_paths = [adapter_dir / f"{method}-rank-{rank}.pt" for rank in range(LOCAL_WORLD_SIZE)]
     stats_paths = [
@@ -363,7 +378,7 @@ def train_distillation(tokenizer, train_rows, test_rows) -> None:
             averaged[key] = torch.stack([state[key].float() for state in states]).mean(0).to(
                 states[0][key].dtype
             )
-        torch.save(averaged, averaged_path)
+        atomic_torch_save(averaged, averaged_path)
         print(f"ADAPTER_AVERAGED workers={LOCAL_WORLD_SIZE} path={averaged_path}", flush=True)
     wait_for([averaged_path])
     averaged = torch.load(averaged_path, map_location="cpu", weights_only=True)

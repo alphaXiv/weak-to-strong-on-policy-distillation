@@ -193,6 +193,10 @@ def _(mo):
 
     These observations support a **partial, negative reproduction outcome**, not a
     falsification of W2S-OPD. See `REPORT.md` for the full protocol and threat model.
+
+    A subsequent full-test direct-OPD attempt is not plotted because a shared-checkpoint
+    publication race killed three evaluation workers before an aggregate metric existed.
+    Its partial 681/824 score is a biased modulo-shard diagnostic, not a result.
     """)
     return
 

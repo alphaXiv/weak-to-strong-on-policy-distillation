@@ -15,6 +15,8 @@ The local implementation found a strong *relative* W2S-OPD advantage after learn
 
 W2S-OPD's best run matched zero-shot and beat its matched direct-OPD control by 11 examples; direct OPD worsened at the same learning rate. The lack of an absolute gain is informative but not a strict refutation. This is a LoRA/FedAvg approximation on one benchmark and one random seed, not the paper's full reported experimental stack. See `REPORT.md` for the complete interpretation and limitations.
 
+A final attempt to evaluate the best direct recipe on all 1,319 test examples did not yield a metric: three workers read the averaged adapter while it was still being written and exited with truncated-checkpoint errors. The run was cancelled after 824 records because a full aggregate had become impossible. The publication branch fixes this coordination bug with atomic checkpoint writes; that fix was syntax-checked but intentionally not rerun under the operator's stop request.
+
 ## What is implemented
 
 - Student-on-policy sampled rollouts.
@@ -25,6 +27,7 @@ W2S-OPD's best run matched zero-shot and beat its matched direct-OPD control by 
 - Eight independent GPU workers followed by mean LoRA-delta aggregation.
 - Deterministic prompt/example seeding and exact-match GSM8K evaluation.
 - Machine-readable terminal metrics prefixed by `ORX_METRICS`.
+- Atomic publication of worker and averaged checkpoints on the shared volume.
 
 ## Repository map
 
