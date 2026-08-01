@@ -1,0 +1,21 @@
+{
+  "mode": "distillation",
+  "method": "w2s",
+  "student_model": "Qwen/Qwen3-8B",
+  "positive_model": "Qwen/Qwen3-4B",
+  "negative_model": "Qwen/Qwen3-0.6B",
+  "dataset": "openai/gsm8k",
+  "dataset_config": "main",
+  "eval_examples": 512,
+  "max_new_tokens": 384,
+  "temperature": 1.0,
+  "top_p": 1.0,
+  "seed": 20260728,
+  "train_steps": 25,
+  "rollouts_per_step": 8,
+  "learning_rate": 0.000002,
+  "alpha": 1.0,
+  "teacher_top_k": 32,
+  "lora_rank": 16,
+  "lora_alpha": 32
+}

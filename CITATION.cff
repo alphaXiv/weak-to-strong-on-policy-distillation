@@ -1,0 +1,39 @@
+cff-version: 1.2.0
+message: "If you use this reproduction package, cite both the software and the original paper."
+title: "Weak-to-Strong On-Policy Distillation: Controlled Reproduction"
+type: software
+authors:
+  - name: "alphaXiv"
+version: 0.1.0
+date-released: 2026-07-31
+repository-code: "https://github.com/alphaXiv/weak-to-strong-on-policy-distillation"
+license: MIT
+keywords:
+  - on-policy distillation
+  - weak-to-strong learning
+  - language models
+  - reproducibility
+preferred-citation:
+  type: article
+  title: "Weak-to-Strong On-Policy Distillation"
+  authors:
+    - given-names: Fangxu
+      family-names: Yu
+    - given-names: Zinan
+      family-names: Lin
+    - given-names: Xiaodong
+      family-names: Liu
+    - given-names: Weijia
+      family-names: Xu
+    - given-names: Michael
+      family-names: Xu
+    - given-names: Tianyi
+      family-names: Zhou
+    - given-names: Jianfeng
+      family-names: Gao
+  year: 2026
+  journal: "arXiv preprint"
+  identifiers:
+    - type: other
+      value: "arXiv:2607.26246"
+  url: "https://arxiv.org/abs/2607.26246"
