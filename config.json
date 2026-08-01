@@ -6,7 +6,7 @@
   "negative_model": "Qwen/Qwen3-0.6B",
   "dataset": "openai/gsm8k",
   "dataset_config": "main",
-  "eval_examples": 512,
+  "eval_examples": 1319,
   "max_new_tokens": 384,
   "temperature": 1.0,
   "top_p": 1.0,
