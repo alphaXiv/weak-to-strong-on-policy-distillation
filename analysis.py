@@ -10,7 +10,7 @@
 
 import marimo
 
-__generated_with = "0.14.17"
+__generated_with = "0.23.16"
 app = marimo.App(width="medium")
 
 
@@ -18,65 +18,64 @@ app = marimo.App(width="medium")
 def _():
     import math
     from io import StringIO
+    from textwrap import dedent
 
     import altair as alt
     import marimo as mo
     import pandas as pd
 
-    return StringIO, alt, math, mo, pd
+    return StringIO, alt, dedent, math, mo, pd
 
 
 @app.cell
 def _(mo):
-    mo.md(
-        r"""
-        # Weak-to-Strong OPD: controlled reproduction
+    mo.md(r"""
+    # Weak-to-Strong OPD: controlled reproduction
 
-        This notebook is **self-contained**: the run-level terminal metrics used below are
-        embedded in the source. It summarizes a Qwen3-8B GSM8K scale-contrast reproduction
-        of [Yu et al. (2026)](https://arxiv.org/abs/2607.26246).
+    This notebook is **self-contained**: the run-level terminal metrics used below are
+    embedded in the source. It summarizes a Qwen3-8B GSM8K scale-contrast reproduction
+    of [Yu et al. (2026)](https://arxiv.org/abs/2607.26246).
 
-        **Headline:** after learning-rate tuning, W2S-OPD scored 434/512—matching zero-shot
-        and beating its matched direct-OPD control by 11 examples. It did not produce an
-        absolute gain over the untrained student in this implementation.
-        """
-    )
+    **Headline:** after learning-rate tuning, W2S-OPD scored 434/512—matching zero-shot
+    and beating its matched direct-OPD control by 11 examples. It did not produce an
+    absolute gain over the untrained student in this implementation.
+    """)
     return
 
 
 @app.cell
-def _(StringIO, pd):
+def _(StringIO, dedent, pd):
     embedded_csv = """phase,label,method,seed,eval_examples,correct,train_steps,rollouts_per_step,learning_rate,alpha,top_k
-main,zero-shot,Zero-shot,20260728,512,434,0,0,,,
-main,direct-best,Direct OPD,20260728,512,430,25,8,0.000002,,32
-main,w2s-best,W2S-OPD,20260728,512,434,25,8,0.000004,1.0,32
-horizon,direct-12x64,Direct OPD,20260728,512,427,12,8,0.000002,,32
-horizon,w2s-12x64,W2S-OPD,20260728,512,428,12,8,0.000002,1.0,32
-horizon,direct-18x64,Direct OPD,20260728,512,423,18,8,0.000002,,32
-horizon,w2s-18x64,W2S-OPD,20260728,512,426,18,8,0.000002,1.0,32
-horizon,direct-25x64,Direct OPD,20260728,512,430,25,8,0.000002,,32
-horizon,w2s-25x64,W2S-OPD,20260728,512,429,25,8,0.000002,1.0,32
-horizon,direct-32x64,Direct OPD,20260728,512,426,32,8,0.000002,,32
-horizon,w2s-32x64,W2S-OPD,20260728,512,422,32,8,0.000002,1.0,32
-horizon,direct-100x64,Direct OPD,20260728,512,418,100,8,0.000002,,32
-horizon,w2s-100x64,W2S-OPD,20260728,512,424,100,8,0.000002,1.0,32
-lr,direct-lr-1e-6,Direct OPD,20260728,512,423,25,8,0.000001,,32
-lr,w2s-lr-1e-6,W2S-OPD,20260728,512,425,25,8,0.000001,1.0,32
-lr,direct-lr-2e-6,Direct OPD,20260728,512,430,25,8,0.000002,,32
-lr,w2s-lr-2e-6,W2S-OPD,20260728,512,429,25,8,0.000002,1.0,32
-lr,direct-lr-4e-6,Direct OPD,20260728,512,423,25,8,0.000004,,32
-lr,w2s-lr-4e-6,W2S-OPD,20260728,512,434,25,8,0.000004,1.0,32
-seed,baseline-20260728,Zero-shot,20260728,128,108,0,0,,,
-seed,baseline-20260729,Zero-shot,20260729,128,108,0,0,,,
-seed,baseline-20260730,Zero-shot,20260730,128,104,0,0,,,
-seed,direct-20260728,Direct OPD,20260728,128,108,6,1,0.000002,,32
-seed,direct-20260729,Direct OPD,20260729,128,109,6,1,0.000002,,32
-seed,direct-20260730,Direct OPD,20260730,128,108,6,1,0.000002,,32
-seed,w2s-20260728,W2S-OPD,20260728,128,109,6,1,0.000002,1.0,32
-seed,w2s-20260729,W2S-OPD,20260729,128,107,6,1,0.000002,1.0,32
-seed,w2s-20260730,W2S-OPD,20260730,128,105,6,1,0.000002,1.0,32
-"""
-    results = pd.read_csv(StringIO(embedded_csv))
+    main,zero-shot,Zero-shot,20260728,512,434,0,0,,,
+    main,direct-best,Direct OPD,20260728,512,430,25,8,0.000002,,32
+    main,w2s-best,W2S-OPD,20260728,512,434,25,8,0.000004,1.0,32
+    horizon,direct-12x64,Direct OPD,20260728,512,427,12,8,0.000002,,32
+    horizon,w2s-12x64,W2S-OPD,20260728,512,428,12,8,0.000002,1.0,32
+    horizon,direct-18x64,Direct OPD,20260728,512,423,18,8,0.000002,,32
+    horizon,w2s-18x64,W2S-OPD,20260728,512,426,18,8,0.000002,1.0,32
+    horizon,direct-25x64,Direct OPD,20260728,512,430,25,8,0.000002,,32
+    horizon,w2s-25x64,W2S-OPD,20260728,512,429,25,8,0.000002,1.0,32
+    horizon,direct-32x64,Direct OPD,20260728,512,426,32,8,0.000002,,32
+    horizon,w2s-32x64,W2S-OPD,20260728,512,422,32,8,0.000002,1.0,32
+    horizon,direct-100x64,Direct OPD,20260728,512,418,100,8,0.000002,,32
+    horizon,w2s-100x64,W2S-OPD,20260728,512,424,100,8,0.000002,1.0,32
+    lr,direct-lr-1e-6,Direct OPD,20260728,512,423,25,8,0.000001,,32
+    lr,w2s-lr-1e-6,W2S-OPD,20260728,512,425,25,8,0.000001,1.0,32
+    lr,direct-lr-2e-6,Direct OPD,20260728,512,430,25,8,0.000002,,32
+    lr,w2s-lr-2e-6,W2S-OPD,20260728,512,429,25,8,0.000002,1.0,32
+    lr,direct-lr-4e-6,Direct OPD,20260728,512,423,25,8,0.000004,,32
+    lr,w2s-lr-4e-6,W2S-OPD,20260728,512,434,25,8,0.000004,1.0,32
+    seed,baseline-20260728,Zero-shot,20260728,128,108,0,0,,,
+    seed,baseline-20260729,Zero-shot,20260729,128,108,0,0,,,
+    seed,baseline-20260730,Zero-shot,20260730,128,104,0,0,,,
+    seed,direct-20260728,Direct OPD,20260728,128,108,6,1,0.000002,,32
+    seed,direct-20260729,Direct OPD,20260729,128,109,6,1,0.000002,,32
+    seed,direct-20260730,Direct OPD,20260730,128,108,6,1,0.000002,,32
+    seed,w2s-20260728,W2S-OPD,20260728,128,109,6,1,0.000002,1.0,32
+    seed,w2s-20260729,W2S-OPD,20260729,128,107,6,1,0.000002,1.0,32
+    seed,w2s-20260730,W2S-OPD,20260730,128,105,6,1,0.000002,1.0,32
+    """
+    results = pd.read_csv(StringIO(dedent(embedded_csv)))
     results["accuracy"] = results["correct"] / results["eval_examples"]
     return (results,)
 
@@ -150,7 +149,7 @@ def _(pd, results):
         }
     )
     paired_summary
-    return (paired,)
+    return
 
 
 @app.cell
@@ -179,24 +178,22 @@ def _(math, mo, results):
 
 @app.cell
 def _(mo):
-    mo.md(
-        r"""
-        ## Interpretation
+    mo.md(r"""
+    ## Interpretation
 
-        1. The 512-example differences are small relative to binomial uncertainty, and the
-           three-seed 128-example check also changes sign across seeds.
-        2. At LR 4e-6, W2S-OPD beats matched direct OPD by 11/512 and exactly matches
-           zero-shot. This interaction is stronger than the default-LR horizon effect.
-        3. No trained setting exceeds the same zero-shot checkpoint. The best W2S run
-           matches it; the best direct run remains 4/512 below it.
-        4. This implementation averages eight independently optimized LoRA deltas. It is
-           not equivalent to the paper's full distributed optimizer and is a plausible source
-           of the reproduction gap.
+    1. The 512-example differences are small relative to binomial uncertainty, and the
+       three-seed 128-example check also changes sign across seeds.
+    2. At LR 4e-6, W2S-OPD beats matched direct OPD by 11/512 and exactly matches
+       zero-shot. This interaction is stronger than the default-LR horizon effect.
+    3. No trained setting exceeds the same zero-shot checkpoint. The best W2S run
+       matches it; the best direct run remains 4/512 below it.
+    4. This implementation averages eight independently optimized LoRA deltas. It is
+       not equivalent to the paper's full distributed optimizer and is a plausible source
+       of the reproduction gap.
 
-        These observations support a **partial, negative reproduction outcome**, not a
-        falsification of W2S-OPD. See `REPORT.md` for the full protocol and threat model.
-        """
-    )
+    These observations support a **partial, negative reproduction outcome**, not a
+    falsification of W2S-OPD. See `REPORT.md` for the full protocol and threat model.
+    """)
     return
 
 

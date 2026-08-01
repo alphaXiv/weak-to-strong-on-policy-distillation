@@ -13,7 +13,7 @@ The local implementation found a strong *relative* W2S-OPD advantage after learn
 | 100 steps × batch 64, 512 eval | 418/512 (81.64%) | 424/512 (82.81%) | 434/512 (84.77%) |
 | 25 steps × batch 64, LR 4e-6 | 423/512 (82.62%) | **434/512 (84.77%)** | 434/512 (84.77%) |
 
-W2S-OPD's best run matched zero-shot and beat its matched direct-OPD control by 11 examples; direct OPD worsened at the same learning rate. The lack of an absolute gain is informative but not a strict refutation. This is a LoRA/FedAvg approximation on one benchmark and one random seed, not the paper's full training stack. See `REPORT.md` for the complete interpretation and limitations.
+W2S-OPD's best run matched zero-shot and beat its matched direct-OPD control by 11 examples; direct OPD worsened at the same learning rate. The lack of an absolute gain is informative but not a strict refutation. This is a LoRA/FedAvg approximation on one benchmark and one random seed, not the paper's full reported experimental stack. See `REPORT.md` for the complete interpretation and limitations.
 
 ## What is implemented
 
@@ -62,7 +62,7 @@ The baseline needs no optimization. Set `"mode": "baseline"` and use the baselin
 The notebook embeds its own data, so it does not depend on the working tree or network after installation:
 
 ```bash
-uvx --with pandas --with altair marimo run analysis.py
+uv run analysis.py
 ```
 
 It reconstructs the principal comparison, training-horizon curve, learning-rate sweep, seed sensitivity, and Wilson intervals from terminal run metrics.
@@ -79,7 +79,7 @@ It reconstructs the principal comparison, training-horizon curve, learning-rate 
 
 ## Important limitations
 
-This package covers only the scale-contrast GSM8K setting. It does not reproduce the paper's math/code suite, full-parameter optimizer, post-RL contrasts, hint contrasts, or multi-teacher experiments. The worker updates are independent and averaged rather than gradient-synchronized, and stochastic single-sample evaluation leaves several-example uncertainty. These deviations are large enough that the result should be read as a controlled partial reproduction.
+This package covers only the scale-contrast GSM8K setting. It does not reproduce the paper's math/code suite, optimizer stack, post-RL contrasts, hint contrasts, or multi-teacher experiments. The worker updates are independent and averaged rather than gradient-synchronized, and stochastic single-sample evaluation leaves several-example uncertainty. These deviations are large enough that the result should be read as a controlled partial reproduction.
 
 ## Citation and license
 
